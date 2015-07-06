@@ -5,8 +5,10 @@ import socket
 import threading
 import server_objects
 import client_server_tools
+import time
 
 import uuid
+import messager
 
 __author__ = 'Alexandr'
 
@@ -29,10 +31,17 @@ class PlayerService(threading.Thread):
         self.allow_work = True
 
     def run(self):
+        print("Starting player service")
         while self.allow_work:
-            data = self.player_connection.recv(1024)
-            decoded_data = int(data.decode("utf-8"))
-            self.player.input_queue.put(decoded_data)
+            try:
+                data = messager.recv_msg(self.player_connection)
+            except ConnectionResetError as e:
+                print("Some player disconnected")
+                self.allow_work = False
+                break
+            decoded_data = int(data)
+            # print("recv/input key: " + data)
+            self.player.apply_pressed_key(decoded_data)
 
 
 class ClientsWaiter(threading.Thread):
@@ -45,10 +54,14 @@ class ClientsWaiter(threading.Thread):
     def run(self):
         while self.allow_to_connect:
             connection, address = self.server.server_socket.accept()
+            player_uuid = uuid.uuid4()
+            print("New Player: " + str(address) + " uuid:" + str(player_uuid))
             self.server.connections[address] = connection
             player_object = server_objects.ServerPlayer()
             PlayerService(connection, player_object).start()
-            self.server.add_object(player_object)
+            print("Adding player object to world...")
+            self.server.add_object(player_object, player_uuid)
+            print("Updating players counter...")
             self.server.players += 1
 
 
@@ -57,36 +70,48 @@ class Server(object):
     def __init__(self, ip, port):
         self.server_objects = {}
         self.connections = {}
-        print("Binding socket...", end=" ")
+
+        print("Binding socket...")
         self.server_socket = socket.socket()
-        print("Ok")
         bind_data = (ip, int(port))
         self.server_socket.bind(bind_data)
         self.server_socket.listen(4)
-        print("Starting client waiter...", end=" ")
+
+        print("Starting client waiter...")
         self.client_waiter = ClientsWaiter(self)
         self.client_waiter.start()
-        print("Ok")
+
         self.players = 0
         self.working = True
 
-    def add_object(self, server_object):
-        self.server_objects[uuid.uuid4()] = server_object
+        server_objects.server_obj = self
+
+        self.start_update_loop()
+        print("Exit main loop...")
+
+    def add_object(self, server_object, obj_uuid=None):
+        if obj_uuid is None:
+            obj_uuid = uuid.uuid4()
+        self.server_objects[obj_uuid] = server_object
+
+    def remove_object(self, obj_to_remove):
+        for iter_uuid in list(self.server_objects.keys()):
+            if self.server_objects[iter_uuid] is obj_to_remove:
+                print("Remove obj")
+                del self.server_objects[iter_uuid]
 
     def start_update_loop(self):
         """ Update every server object in main loop and then send object's data to players """
         while self.working:
             self.update_objects()
-            json_data = self.generate_data_about_world()
+            json_data_to_send = client_server_tools.pack_patch(self.server_objects)
+            # print("Send loop... ")
             for address, connection in self.connections.items():
-                connection.send(json_data.encode("utf-8"))
-
-    def generate_data_about_world(self):
-        """ Generate data from server objects """
-        return client_server_tools.server_objects_to_json(self.server_objects)
+                messager.send_msg(connection, json_data_to_send)
+            time.sleep(0.2)
 
     def update_objects(self):
-        for server_object in self.server_objects:
+        for server_object in list(self.server_objects.values()):
             server_object.update()
 
     def stop(self):
@@ -96,11 +121,10 @@ class Server(object):
 
 
 def init():
-    ip = "localhost"  # input("Ip >> ")
-    port = 11223  # input("Port >> ")
+    ip = input("Ip >> ")
+    port = input("Port >> ")
     global server_obj
     server_obj = Server(ip, port)
-    server_objects.server_obj = server_obj
 
 if __name__ == "__main__":
     print("= Standalone server")

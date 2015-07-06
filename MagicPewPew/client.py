@@ -7,6 +7,9 @@ from screen_elements import ScreenLabel
 import client_server_tools
 
 import socket
+import messager
+
+import ctypes
 
 __author__ = 'Alexandr'
 
@@ -29,9 +32,13 @@ class ServerDataProcessor(threading.Thread):
 
     def run(self):
         while self.allow_processing:
-            bytes_json_data = self.connection.recv(1024)
-            json_data = bytes_json_data.decode("utf-8")
-            server_objects = client_server_tools.json_to_server_objects(json_data)
+            try:
+                json_data = messager.recv_msg(self.connection)
+            except Exception as e:
+                print(e)
+                self.client.stop_client()
+                sys.exit(1)
+            server_objects = client_server_tools.unpack_patch(json_data)
             self.client.update_client_objects_from_server_objects(server_objects)
 
 
@@ -41,7 +48,7 @@ class KeyboardControlListener(KeyboardListener):
         self.connection = connection
 
     def on_key_pressed(self, key_code):
-        self.connection.send(str(key_code).encode("utf-8"))
+        messager.send_msg(self.connection, str(key_code))
 
 
 class Client(object):
@@ -54,32 +61,46 @@ class Client(object):
         self.keyboard_worker = KeyboardControlListener(self.connection)
         self.keyboard_worker.start()
 
+        self.screen = Screen(50, 20)
+
         self.server_data_processor = ServerDataProcessor(self.connection, self)
         self.server_data_processor.start()
 
-        self.screen = Screen(50, 20)
         self.is_working = True
 
         self.start_update_loop()
 
+    def stop_client(self):
+        self.screen.destroy()
+        self.is_working = False
+        self.keyboard_worker.allow_listening = False
+        self.server_data_processor.allow_processing = False
+
     def start_update_loop(self):
         while self.is_working:
-            for client_object in self.client_objects:
-                if client_object not in self.screen.screen_objects:
-                    self.screen.add_object(client_object)
+            self.screen.screen_objects = list(self.client_objects.values())
+            # for client_object in list(self.client_objects.values()):
+            #     if client_object not in self.screen.screen_objects:
+            #         self.screen.add_object(client_object)
 
-    def update_client_objects_from_server_objects(self, server_objects_patch):
-        for uuid, server_object in server_objects_patch.items():
+    def update_client_objects_from_server_objects(self, patch_objects):
+        new_client_objects_dict = {}
+        for uuid, patch_dict in patch_objects.items():
+            # print(patch_dict)
             if uuid not in self.client_objects:
-                self.client_objects = client_server_tools.get_client_class_from_server_class_name(
-                    server_object.__class__.__name__)(self.screen)
+                self.client_objects[uuid] = client_server_tools.get_client_class_from_patch_class_name(
+                    patch_dict[1])(self.screen)
+                # print("New object from server")
+                # ctypes.windll.user32.MessageBoxW(0, "UUID: " + str(uuid), "New player", 0)
             client_object = self.client_objects[uuid]
-            client_object.update_dict(server_object.__dict__)
+            client_object.update_dict(patch_dict[0])
+            new_client_objects_dict[uuid] = client_object
+        self.client_objects = new_client_objects_dict
 
 
 def init():
-    ip = "localhost"  # input("Sever ip >>")
-    port = 11223  # input("Sever port >>")
+    ip = input("Sever ip >>")
+    port = input("Sever port >>")
     client = Client(ip, port)
 
 if __name__ == "__main__":

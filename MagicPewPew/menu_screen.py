@@ -5,6 +5,10 @@ from screen_elements import ScreenLabel
 from screen import Screen, ScreenObject, ScreenObjectModel
 import info_screen
 
+import client
+from sys import executable
+from subprocess import Popen, CREATE_NEW_CONSOLE
+
 __author__ = 'Alexandr'
 
 keyboard_listener = None
@@ -19,13 +23,15 @@ class KeyboardControlListener(KeyboardListener):
         if key_code == key_s:
             update_selected_button(False)
         if key_code == key_enter:
-            destroy()
             if selected_button_id == -1:  # Host game
-                pass
+                Popen([executable, 'server.py'], creationflags=CREATE_NEW_CONSOLE)
             if selected_button_id == 0:  # Connect to
-                pass
+                Popen([executable, 'client.py'], creationflags=CREATE_NEW_CONSOLE)
             if selected_button_id == 1:  # Show screen with info
+                destroy()
                 info_screen.show()
+            if selected_button_id == 2:  # Exit
+                destroy()
 
 
 def update_selected_button(up):
@@ -68,7 +74,7 @@ def show():
     global selected_button_id
     selected_button_id = 0
 
-    logo_frames_map = {"DEFAULT": "client/models/logo.model"}
+    logo_frames_map = {"DEFAULT": "models/logo.model"}
     logo_model = ScreenObjectModel(logo_frames_map)
     logo_model.set_current_frames("DEFAULT")
     logo_model.center_hor = True

@@ -15,20 +15,21 @@ class ScreenRendererUpdater(Thread):
         super().__init__()
         self.renderer_obj = renderer_obj
         self.allow_rendering = True
-        self.world_obj = world_obj
+        self.screen_obj = world_obj
 
     def run(self):
         while self.allow_rendering:
-            clear_screen()
+            if not self.renderer_obj.debug_mode:
+                clear_screen()
             # Clear screen objects list
             self.renderer_obj.renderer_objects.clear()
-            for world_object in self.world_obj.screen_objects:
-                world_object.model.on_render()
-                renderer_obj = world_object.model.get_renderer_object()
-                renderer_obj.pos_x = world_object.pos_x
-                renderer_obj.pos_y = self.renderer_obj.screen_y - (renderer_obj.size_y + world_object.pos_y)
+            for screen_object in self.screen_obj.screen_objects:
+                screen_object.model.on_render()
+                renderer_obj = screen_object.model.get_renderer_object()
+                renderer_obj.pos_x = screen_object.pos_x
+                renderer_obj.pos_y = self.renderer_obj.screen_y - (renderer_obj.size_y + screen_object.pos_y)
                 self.renderer_obj.renderer_objects.append(renderer_obj)
-                # print("Obj: x/y: " + str(world_object.pos_x) + "/" + str(world_object.pos_y))
+                # print("Obj: x/y: " + str(screen_object.pos_x) + "/" + str(screen_object.pos_y))
                 # print(" @ renderer-Obj: x/y: " + str(renderer_obj.pos_x) + "/" + str(renderer_obj.pos_y))
                 # print(" @ renderer-Obj: size(x/y): " + str(renderer_obj.size_x) + "/" + str(renderer_obj.size_y))
 
@@ -68,8 +69,8 @@ class Screen(object):
         self.screen_updater.start()
 
     def update(self):
-        for world_object in self.screen_objects:
-            world_object.update()
+        for screen_object in self.screen_objects:
+            screen_object.update()
 
     def add_object(self, world_object):
         self.screen_objects.append(world_object)
